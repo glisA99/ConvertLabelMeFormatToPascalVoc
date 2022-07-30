@@ -11,10 +11,19 @@ import org.w3c.dom.Element;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerConfigurationException;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 
 import static constants.JsonFormatConstants.*;
+import static constants.XMLConstants.*;
 
 /**
  *
@@ -51,24 +60,6 @@ import static constants.JsonFormatConstants.*;
  */
 public final class Transformations {
 
-    public static final String XML_ANNOTATION = "annotation";
-    public static final String XML_FOLDER = "folder";
-    public static final String XML_FILENAME = "filename";
-    public static final String XML_PATH = "path";
-    public static final String XML_SOURCE = "source";
-
-    public static final String XML_SIZE = "size";
-    public static final String XML_SIZE_WIDTH = "width";
-    public static final String XML_SIZE_HEIGHT = "height";
-    public static final String XML_SIZE_DEPTH = "depth";
-
-    public static final String XML_OBJECT = "object";
-    public static final String XML_OBJECT_NAME = "name";
-    public static final String XML_OBJECT_POSE = "pose";
-    public static final String XML_OBJECT_TRUNCATED = "truncated";
-    public static final String XML_OBJECT_DIFFICULT = "difficult";
-    public static final String XML_OBJECT_BNDBOX = "bndbox";
-
     /**
      * Convert image annotation in json format (output from labelme image annotation tool) to
      * corresponding PascalVOC XML format
@@ -82,12 +73,21 @@ public final class Transformations {
 *                images and output directory. Also image filename is expected to be same as
      *           input json filename.
      */
-    public static void convertJsonToPascalVoc(String filepath, String imageExtension, String dbName) throws IOException, ParseException {
+    public static void convertJsonToPascalVoc(String filepath, String imageExtension, String dbName) throws IOException, ParseException, TransformerException {
         // parse json to model Image
         Image image = parseJson(filepath);
 
+        // rectify polygons (rectify method mutates original image)
+        Rectify.getInstance().rectify(image);
+
         // convert to corresponding xml element (annotation)
-        Element rootElement = convertImageToXML(image,filepath,imageExtension);
+        Document document = convertImageToXML(image,filepath,imageExtension,dbName);
+
+        // write
+        String directoryPath = extractDirectoryPath(filepath);
+        String filename = extractFilename(filepath);
+        String _path = directoryPath + "/" + filename + "." + "xml";
+        writeDocument(document,_path);
     }
 
     public static Image parseJson(String filepath) throws IOException, ParseException {
@@ -120,7 +120,26 @@ public final class Transformations {
         return image;
     }
 
-    public static Element convertImageToXML(Image image, String filepath, String imageExtension, String dbName) {
+    private static String extractDirectoryPath(String filepath) {
+        System.out.println("Filepath: " + filepath);
+        String[] split = filepath.split("/");
+        String concatString = "";
+        for(int i = 0;i < split.length - 1;i++) {
+            concatString = concatString.concat(i == 0 ? "./" + split[i] : "/" + split[i]);
+        }
+        System.out.println("Directory path: " + concatString);
+        return concatString;
+    }
+
+    private static String extractFilename(String filepath) {
+        String[] split = filepath.split("/");
+        String filename = split[split.length - 1];
+        split = filename.split("\\.");
+        System.out.println("Filename: " + split[0]);
+        return split[0];
+    }
+
+    public static Document convertImageToXML(Image image, String filepath, String imageExtension, String dbName) {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
@@ -143,7 +162,8 @@ public final class Transformations {
 
             // filename element
             Element filenameEl = document.createElement(XML_FILENAME);
-            String imageFilename = filename.split(".")[0] + imageExtension;
+            System.out.println("Filename: " + filename);
+            String imageFilename = filename.split("\\.")[0] + imageExtension;
             filenameEl.setTextContent(imageFilename);
             annotations.appendChild(filenameEl);
 
@@ -151,7 +171,7 @@ public final class Transformations {
             Element pathEl = document.createElement(XML_PATH);
             split = filepath.split("/");
             String concatString = "";
-            for(int i = 0;i < split.length - 2;i++) {
+            for(int i = 0;i < split.length - 1;i++) {
                 concatString.concat(i == 0 ? "./" + split[i] : "/" + split[i]);
             }
             concatString.concat("/" + imageFilename);
@@ -184,17 +204,61 @@ public final class Transformations {
             annotations.appendChild(segmentedEl);
 
             // object elements
-            image.getLabels().forEach(label -> {
+            for(int i = 0;i < image.getLabels().size();i++) {
+                Label label = ((ArrayList<Label>) image.getLabels()).get(i);
                 Element objectEl = document.createElement(XML_OBJECT);
 
-                annotations.appendChild(objectEl);
-            });
+                Element nameEl = document.createElement(XML_OBJECT_NAME);
+                nameEl.setTextContent(label.getLabel());
+                objectEl.appendChild(nameEl);
 
-            return annotations;
+                Element poseEl = document.createElement(XML_OBJECT_POSE);
+                poseEl.setTextContent("Unspecified");
+                objectEl.appendChild(poseEl);
+
+                Element trucatedEl = document.createElement(XML_OBJECT_TRUNCATED);
+                trucatedEl.setTextContent("0");
+                objectEl.appendChild(trucatedEl);
+
+                Element diffEl = document.createElement(XML_OBJECT_DIFFICULT);
+                diffEl.setTextContent("0");
+                objectEl.appendChild(diffEl);
+
+                // bnd box
+                Element bndboxEl = document.createElement(XML_OBJECT_BNDBOX);
+                double[] rect = ((ArrayList<double[]>) image.getRectifiedPolygons()).get(i);
+                Element xminEl = document.createElement(XML_OBJECT_BNDBOX_XMIN);
+                Element yminEl = document.createElement(XML_OBJECT_BNDBOX_YMIN);
+                Element xmaxEl = document.createElement(XML_OBJECT_BNDBOX_XMAX);
+                Element ymaxEl = document.createElement(XML_OBJECT_BNDBOX_YMAX);
+                Element[] cords = new Element[] { xminEl, yminEl, xmaxEl, ymaxEl };
+                for(int j = 0;j < cords.length;j++) {
+                    cords[j].setTextContent(Double.toString(rect[j]));
+                    bndboxEl.appendChild(cords[j]);
+                }
+                objectEl.appendChild(bndboxEl);
+
+                annotations.appendChild(objectEl);
+            };
+
+            document.appendChild(annotations);
+            return document;
         } catch (Exception exception) {
             exception.printStackTrace();
             throw new RuntimeException(exception);
         }
+    }
+
+    public static void writeDocument(Document document, String full_path) throws TransformerException {
+        // write content into xml file
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        Transformer transformer = transformerFactory.newTransformer();
+        DOMSource source = new DOMSource(document);
+
+        StreamResult result = new StreamResult(new File(full_path));
+
+        transformer.transform(source, result);
+        System.out.println("File created successfully");
     }
 
 }
