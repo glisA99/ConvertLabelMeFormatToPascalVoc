@@ -20,7 +20,10 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.stream.Stream;
 
 import static constants.JsonFormatConstants.*;
 import static constants.XMLConstants.*;
@@ -90,6 +93,29 @@ public final class Transformations {
         writeDocument(document,_path);
     }
 
+    public static void convertAll(String directoryPath, String imageExtension, String dbName) throws Exception {
+        Stream<Path> stream = Files.list(Path.of(directoryPath));
+        stream.forEach(path -> {
+            System.out.println(path.toString());
+            String[] split = path.toString().split("\\\\");
+            String filename = split[split.length - 1];
+            split = filename.split("\\.");
+            String extension = split[1];
+            System.out.println("File extension: " + extension);
+            if (extension.equals("json")) {
+                try {
+                    convertJsonToPascalVoc(path.toString(),imageExtension,dbName);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                } catch (ParseException e) {
+                    throw new RuntimeException(e);
+                } catch (TransformerException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+    }
+
     public static Image parseJson(String filepath) throws IOException, ParseException {
         FileReader fileReader = new FileReader(filepath);
         JSONParser jsonParser = new JSONParser();
@@ -123,6 +149,7 @@ public final class Transformations {
     private static String extractDirectoryPath(String filepath) {
         System.out.println("Filepath: " + filepath);
         String[] split = filepath.split("/");
+        if (split.length == 1) split = filepath.split("\\\\");
         String concatString = "";
         for(int i = 0;i < split.length - 1;i++) {
             concatString = concatString.concat(i == 0 ? "./" + split[i] : "/" + split[i]);
@@ -133,6 +160,7 @@ public final class Transformations {
 
     private static String extractFilename(String filepath) {
         String[] split = filepath.split("/");
+        if (split.length == 1) split = filepath.split("\\\\");
         String filename = split[split.length - 1];
         split = filename.split("\\.");
         System.out.println("Filename: " + split[0]);
@@ -163,8 +191,8 @@ public final class Transformations {
             // filename element
             Element filenameEl = document.createElement(XML_FILENAME);
             System.out.println("Filename: " + filename);
-            String imageFilename = filename.split("\\.")[0] + "." + imageExtension;
-            filenameEl.setTextContent(imageFilename);
+            String imageFilename = extractFilename(filepath);
+            filenameEl.setTextContent(imageFilename + "." + imageExtension);
             annotations.appendChild(filenameEl);
 
             // path element
