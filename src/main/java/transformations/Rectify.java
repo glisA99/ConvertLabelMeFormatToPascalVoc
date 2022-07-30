@@ -29,7 +29,7 @@ public class Rectify implements IRectify {
     }
 
     public Image rectify(Image image) {
-        image.getLabels().stream().forEach(label -> {
+        image.getLabels().forEach(label -> {
             double[] rectifiedPolygon = _rectify(label);
             image.getRectifiedPolygons().add(rectifiedPolygon);
         });
@@ -38,17 +38,18 @@ public class Rectify implements IRectify {
 
     private double[] _rectify(Label label) {
         double[][] points = label.getPoints();
-        double xmin = 0,xmax = 0,ymin = 0,ymax = 0;
+        double xmin = 10000,xmax = 0,ymin = 10000,ymax = 0;
 
         for(int i = 0;i < points.length;i++) {
             // extract x and y cordinates for each polygon point
             double xcord = points[i][0], ycord = points[i][1];
+            System.out.println("xcord: " + xcord + "\t" + "ycord: " + ycord);
             // update if needed xmax and xmin
             if (xcord > xmax) xmax = xcord;
-            else if (xcord < xmin) xmin = xcord;
+            if (xcord < xmin) xmin = xcord;
             // update if needed ymax and ymin
             if (ycord > ymax) ymax = ycord;
-            else if (ycord < ymin) ymin = ycord;
+            if (ycord < ymin) ymin = ycord;
         }
 
         return new double[] { xmin, ymin, xmax, ymax };

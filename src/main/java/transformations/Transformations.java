@@ -157,13 +157,13 @@ public final class Transformations {
 
             // folder element
             Element folderEl = document.createElement(XML_FOLDER);
-            folderEl.setTextContent(directoryName);
+            folderEl.setTextContent(extractDirectoryPath(filepath));
             annotations.appendChild(folderEl);
 
             // filename element
             Element filenameEl = document.createElement(XML_FILENAME);
             System.out.println("Filename: " + filename);
-            String imageFilename = filename.split("\\.")[0] + imageExtension;
+            String imageFilename = filename.split("\\.")[0] + "." + imageExtension;
             filenameEl.setTextContent(imageFilename);
             annotations.appendChild(filenameEl);
 
